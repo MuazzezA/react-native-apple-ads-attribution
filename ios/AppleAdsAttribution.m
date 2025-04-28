@@ -1,7 +1,7 @@
 #import "AppleAdsAttribution.h"
 #import <React/RCTLog.h>
 #import <AdServices/AdServices.h>
-#import <iAd/iAd.h>
+
 
 @implementation AppleAdsAttribution
 static NSString *const RNAAAErrorDomain = @"RNAAAErrorDomain";
@@ -158,29 +158,6 @@ API_AVAILABLE(ios(14.3)) {
     }
 }
 
-/**
- * Gets attribution data from the old iAd API.
- * completionHandler will return nil with an error if attribution data couldn't be retrieved. Reasons for failing may be that the user disabled tracking or that the iOS version is < 10.
- */
-+ (void) getiAdAttributionDataWithCompletionHandler: (void (^)(NSDictionary * _Nullable data, NSError * _Nullable error))completionHandler {
-    
-    if ([[ADClient sharedClient] respondsToSelector:@selector(requestAttributionDetailsWithBlock:)]) {
-        [[ADClient sharedClient] requestAttributionDetailsWithBlock: ^(NSDictionary *attributionDetails, NSError *error) {
-            if (error == nil) {
-                completionHandler(attributionDetails, nil);
-            } else {
-                NSLog(@"getiAdAttributionDataWithCompletionHandler error getting data %@", error);
-                completionHandler(nil, error);
-            }
-        }];
-    } else {
-        // requestAttributionDetailsWithBlock is not available probably < iOS 10
-        NSMutableDictionary* details = [NSMutableDictionary dictionary];
-        [details setValue:@"iAd ADClient not available" forKey:NSLocalizedDescriptionKey];
-        NSError* error = [NSError errorWithDomain:RNAAAErrorDomain code:100 userInfo:details];
-        completionHandler(nil, error);
-    }
-}
 
 /**
  * Tries to get attribution data first using the AdServices API. If it fails it fallbacks to the old iAd API.
@@ -195,39 +172,11 @@ RCT_EXPORT_METHOD(getAttributionData:
         if (attributionData != nil) {
             resolve(attributionData);
         } else {
-            // Fallback to old iAd client API
-            [AppleAdsAttribution getiAdAttributionDataWithCompletionHandler:^(NSDictionary * _Nullable data, NSError * _Nullable iAdError) {
-                if (data != nil) {
-                    resolve(data);
-                } else {
-                    // Reject with both error messages
-                    NSString *combinedErrorMessage = [NSString stringWithFormat:@"Ad services error: %@. \niAD error: %@", adServicesError != NULL ? adServicesError.localizedDescription : @"no error message", iAdError != NULL ? iAdError.localizedDescription : @"no error message"];
-                    
-                    [AppleAdsAttribution rejectPromiseWithUserInfo:reject
-                                                          userInfo:[@{
-                                                            @"code" : @"unknown",
-                                                            @"message" : combinedErrorMessage
-                                                          } mutableCopy]];
-                }
-                
-            }];
-        }
-    }];
-}
-
-/**
- * Tries to get attribution data using the old iAd API.
- * Rejected with error if it failed to get data
- *  */
-RCT_EXPORT_METHOD(getiAdAttributionData: (RCTPromiseResolveBlock) resolve rejecter: (RCTPromiseRejectBlock) reject) {
+            // Reject with ad services error if no attribution data is found
+            NSString *errorMessage = adServicesError != NULL ? adServicesError.localizedDescription : @"No attribution data found";
     
-    [AppleAdsAttribution getiAdAttributionDataWithCompletionHandler:^(NSDictionary * _Nullable data, NSError * _Nullable error) {
-        if(data != nil) {
-            resolve(data);
-        } else {
-            [AppleAdsAttribution rejectPromiseWithNSError:reject error:error];
+            reject(@"ad_services_error", errorMessage, adServicesError);
         }
-        
     }];
 }
 
